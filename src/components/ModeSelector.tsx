@@ -6,7 +6,11 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
-export function ModeSelector() {
+interface ModeSelectorProps {
+  autoStart?: boolean;
+}
+
+export function ModeSelector({ autoStart = false }: ModeSelectorProps) {
   const { mode, setMode } = useAccessibilityStore();
   const { speak, cancel } = useSpeechSynthesis();
   const { transcript, startListening, stopListening, isListening } = useSpeechRecognition();
@@ -15,36 +19,38 @@ export function ModeSelector() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (mode === 'voice' && !welcomeSpoken) {
-      setWelcomeSpoken(true);
-      
-      try {
-        speak('Welcome to AblEats. Voice commands activated. Try saying "Help" for available commands.');
+    // Only trigger automatically if autoStart is true
+    if (mode === 'voice' && (autoStart || welcomeSpoken)) {
+      if (!welcomeSpoken) {
+        setWelcomeSpoken(true);
         
-        // Start listening after welcome message
-        const timeoutId = setTimeout(() => {
-          try {
-            const recognition = startListening();
-            if (!recognition) {
-              setMicError('Voice recognition is not supported in your browser');
-              toast.error('Voice recognition is not supported in your browser. Please select a mode manually.', {
-                duration: 5000,
-                icon: <AlertCircle className="h-5 w-5" />,
-              });
+        try {
+          // No need to speak welcome message here as it's already spoken in Welcome component
+          // We'll just start listening
+          const timeoutId = setTimeout(() => {
+            try {
+              const recognition = startListening();
+              if (!recognition) {
+                setMicError('Voice recognition is not supported in your browser');
+                toast.error('Voice recognition is not supported in your browser. Please select a mode manually.', {
+                  duration: 5000,
+                  icon: <AlertCircle className="h-5 w-5" />,
+                });
+              }
+            } catch (error) {
+              console.error('Error starting speech recognition:', error);
+              setMicError('Failed to start voice recognition');
             }
-          } catch (error) {
-            console.error('Error starting speech recognition:', error);
-            setMicError('Failed to start voice recognition');
-          }
-        }, 4000);
+          }, 2000);  // Reduced delay since welcome message is already spoken in Welcome component
 
-        return () => clearTimeout(timeoutId);
-      } catch (error) {
-        console.error('Error in voice mode initialization:', error);
-        setMicError('Failed to initialize voice mode');
+          return () => clearTimeout(timeoutId);
+        } catch (error) {
+          console.error('Error in voice mode initialization:', error);
+          setMicError('Failed to initialize voice mode');
+        }
       }
     }
-  }, [mode, speak, startListening, welcomeSpoken]);
+  }, [mode, speak, startListening, welcomeSpoken, autoStart]);
 
   useEffect(() => {
     if (transcript) {

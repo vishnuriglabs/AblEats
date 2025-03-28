@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, Star, Clock, MapPin, Mic, Leaf, Filter, ShoppingCart } from 'lucide-react';
-import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { toast } from 'sonner';
 import { RESTAURANTS, MENU_ITEMS } from '../data/mockData';
 import type { Restaurant, MenuItem } from '../types';
@@ -11,10 +10,13 @@ import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 
 export function Home() {
   const [searchQuery, setSearchQuery] = useState('');
-  const { isListening, transcript, startListening } = useSpeechRecognition();
   const [showVegOnly, setShowVegOnly] = useState(false);
   const [activeTab, setActiveTab] = useState<'restaurants' | 'foods'>('restaurants');
+  const { speak, cancel } = useSpeechSynthesis();
+  const { mode } = useAccessibilityStore();
+  const navigate = useNavigate();
 
+  // Filter restaurants and foods
   const filteredRestaurants = RESTAURANTS.filter(restaurant => 
     (showVegOnly ? restaurant.isVeg : true) &&
     (restaurant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -27,25 +29,95 @@ export function Home() {
     item.category.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  // Handle search updates
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-  };
-
-  const handleVoiceSearch = () => {
-    const recognition = startListening();
-    if (recognition) {
-      toast.info('Listening... Speak now', {
-        duration: 2000,
-      });
+    if (mode === 'voice') {
+      const resultCount = activeTab === 'restaurants' ? filteredRestaurants.length : filteredFoods.length;
+      speak(`Found ${resultCount} ${activeTab} for "${query}"`);
     }
   };
 
-  React.useEffect(() => {
-    if (transcript) {
-      handleSearch(transcript);
-      toast.success('Voice input received!');
+  // Handle tab changes
+  const handleTabChange = (tab: 'restaurants' | 'foods') => {
+    setActiveTab(tab);
+    if (mode === 'voice') {
+      const resultCount = tab === 'restaurants' ? filteredRestaurants.length : filteredFoods.length;
+      speak(`Showing ${tab}. Found ${resultCount} items`);
     }
-  }, [transcript]);
+  };
+
+  // Handle veg filter
+  const handleVegFilter = () => {
+    setShowVegOnly(!showVegOnly);
+    if (mode === 'voice') {
+      speak(!showVegOnly ? 'Showing vegetarian items only' : 'Showing all items');
+    }
+  };
+
+  // Listen for voice commands
+  useEffect(() => {
+    const handleVoiceCommand = (event: Event) => {
+      const customEvent = event as CustomEvent<{command: string}>;
+      if (!customEvent.detail?.command) return;
+
+      const command = customEvent.detail.command.toLowerCase();
+      console.log('Home component received command:', command);
+
+      // Handle search commands
+      if (command.startsWith('search for ')) {
+        const searchTerm = command.replace('search for ', '');
+        handleSearch(searchTerm);
+        return;
+      }
+
+      // Handle filter commands
+      if (command === 'show restaurants' || command === 'view restaurants') {
+        handleTabChange('restaurants');
+        return;
+      }
+
+      if (command === 'show foods' || command === 'view foods') {
+        handleTabChange('foods');
+        return;
+      }
+
+      // Handle dietary preference commands
+      if (command === 'show vegetarian only' || command === 'show veg only') {
+        if (!showVegOnly) {
+          setShowVegOnly(true);
+          speak('Showing vegetarian items only');
+        } else {
+          speak('Already showing vegetarian items only');
+        }
+        return;
+      }
+
+      if (command === 'show all items' || command === 'show everything') {
+        if (showVegOnly) {
+          setShowVegOnly(false);
+          speak('Showing all items');
+        } else {
+          speak('Already showing all items');
+        }
+        return;
+      }
+    };
+
+    window.addEventListener('voiceCommand', handleVoiceCommand);
+    return () => window.removeEventListener('voiceCommand', handleVoiceCommand);
+  }, [mode, speak, showVegOnly, handleSearch, handleTabChange]);
+
+  // Announce initial page load with more context
+  useEffect(() => {
+    if (mode === 'voice') {
+      const itemCount = activeTab === 'restaurants' ? filteredRestaurants.length : filteredFoods.length;
+      const message = `Welcome to the home page. Currently showing ${itemCount} ${activeTab}. ${
+        showVegOnly ? 'Filtered to show vegetarian items only. ' : ''
+      }You can search, filter by type, or say help for more options.`;
+      speak(message);
+    }
+  }, [mode, activeTab, filteredRestaurants.length, filteredFoods.length, showVegOnly, speak]);
 
   return (
     <div className="space-y-8">
@@ -62,62 +134,19 @@ export function Home() {
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="w-full px-4 py-3 pl-12 rounded-full glass-effect border-none focus:ring-2 focus:ring-primary"
-            aria-label="Search"
+            aria-label="Search restaurants and foods"
           />
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
-          <button
-            onClick={handleVoiceSearch}
-            className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition-colors
-              ${isListening ? 'text-primary animate-pulse' : 'text-gray-400'} hover:text-primary`}
-            aria-label="Search by voice"
-          >
-            <Mic className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Featured Restaurants Section */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-6 gradient-text">
-          Featured Restaurants
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {RESTAURANTS.slice(0, 3).map((restaurant) => (
-            <Link
-              key={restaurant.id}
-              to={`/restaurant/${restaurant.id}`}
-              className="relative h-48 rounded-2xl overflow-hidden hover-glow transition-transform duration-300 hover:scale-[1.02]"
-            >
-              <img
-                src={restaurant.image}
-                alt={restaurant.name}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-              <div className="absolute bottom-0 left-0 w-full p-6">
-                <h3 className="text-xl font-bold text-white mb-1">{restaurant.name}</h3>
-                <div className="flex items-center space-x-2 mb-2">
-                  <span className="text-white text-sm">{restaurant.cuisine}</span>
-                  <span className="h-1 w-1 bg-white rounded-full"></span>
-                  <div className="flex items-center">
-                    <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                    <span className="text-white text-sm">{restaurant.rating}</span>
-                  </div>
-                </div>
-                <span className="inline-block px-3 py-1 bg-primary/80 text-white text-sm rounded-full">
-                  View Menu
-                </span>
-              </div>
-            </Link>
-          ))}
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex items-center justify-between mb-8">
-        <div className="flex gap-4">
+        <div className="flex gap-4" role="tablist" aria-label="View options">
           <button
-            onClick={() => setActiveTab('restaurants')}
+            role="tab"
+            aria-selected={activeTab === 'restaurants'}
+            onClick={() => handleTabChange('restaurants')}
             className={`px-4 py-2 rounded-full transition-all ${
               activeTab === 'restaurants'
                 ? 'bg-primary text-white'
@@ -127,7 +156,9 @@ export function Home() {
             Restaurants
           </button>
           <button
-            onClick={() => setActiveTab('foods')}
+            role="tab"
+            aria-selected={activeTab === 'foods'}
+            onClick={() => handleTabChange('foods')}
             className={`px-4 py-2 rounded-full transition-all ${
               activeTab === 'foods'
                 ? 'bg-primary text-white'
@@ -138,7 +169,8 @@ export function Home() {
           </button>
         </div>
         <button
-          onClick={() => setShowVegOnly(!showVegOnly)}
+          onClick={handleVegFilter}
+          aria-pressed={showVegOnly}
           className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all ${
             showVegOnly ? 'bg-green-500 text-white' : 'bg-gray-100 hover:bg-gray-200'
           }`}
@@ -149,19 +181,33 @@ export function Home() {
       </div>
 
       {/* Content */}
-      {activeTab === 'restaurants' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRestaurants.map((restaurant) => (
-            <RestaurantCard key={restaurant.id} restaurant={restaurant} />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredFoods.map((food) => (
-            <FoodCard key={food.id} food={food} />
-          ))}
-        </div>
-      )}
+      <div 
+        role="tabpanel" 
+        aria-label={`${activeTab} list`}
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+      >
+        {activeTab === 'restaurants' ? (
+          filteredRestaurants.length > 0 ? (
+            filteredRestaurants.map((restaurant) => (
+              <RestaurantCard key={restaurant.id} restaurant={restaurant} />
+            ))
+          ) : (
+            <p className="col-span-full text-center text-gray-500 p-4">
+              No restaurants found. Try a different search.
+            </p>
+          )
+        ) : (
+          filteredFoods.length > 0 ? (
+            filteredFoods.map((food) => (
+              <FoodCard key={food.id} food={food} />
+            ))
+          ) : (
+            <p className="col-span-full text-center text-gray-500 p-4">
+              No food items found. Try a different search.
+            </p>
+          )
+        )}
+      </div>
     </div>
   );
 }
