@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, MapPin, ShoppingBag, Edit, Check, Phone, Mail, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
+import { User, MapPin, ShoppingBag, Edit, Check, Phone, Mail, ChevronDown, ChevronUp, ArrowLeft, Pencil, X, CreditCard, Wallet } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
-import { useAuthStore } from '../store/authStore';
 import { useAccessibilityStore } from '../store/accessibilityStore';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { useProfileStore } from '../store/profileStore';
 
 // Define a mock order type
 interface Order {
@@ -26,29 +26,37 @@ interface Order {
 
 export function UserProfile() {
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuthStore();
   const { mode } = useAccessibilityStore();
   const { speak } = useSpeechSynthesis();
+  const profile = useProfileStore();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isEditingCard, setIsEditingCard] = useState(false);
+  const [isEditingUpi, setIsEditingUpi] = useState(false);
+  const [formData, setFormData] = useState({
+    name: profile.name,
+    email: profile.email,
+    phone: profile.phone,
+    city: profile.city,
+    pinCode: profile.pinCode
+  });
+  const [cardData, setCardData] = useState({
+    cardNumber: profile.cardDetails.cardNumber,
+    nameOnCard: profile.cardDetails.nameOnCard,
+    expiry: profile.cardDetails.expiry,
+    cvv: profile.cardDetails.cvv
+  });
+  const [upiData, setUpiData] = useState({
+    upiId: profile.upiId
+  });
   
   // State for user information
-  const [name, setName] = useState(user?.name || '');
-  const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState('');
-  const [addresses, setAddresses] = useState<string[]>(['']);
+  const [addresses, setAddresses] = useState<string[]>(['123 Main St, City']);
   const [activeAddress, setActiveAddress] = useState(0);
-  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isEditingAddress, setIsEditingAddress] = useState(false);
   
   // State for order history
   const [orderHistory, setOrderHistory] = useState<Order[]>([]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
-  
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/login');
-    }
-  }, [isAuthenticated, navigate]);
   
   // Provide audio feedback for screen reader users
   useEffect(() => {
@@ -85,42 +93,83 @@ export function UserProfile() {
           status: 'delivered',
           deliveryAddress: 'Apartment 4B, Skyline Heights, Palayam, Trivandrum',
           paymentMethod: 'Cash on Delivery'
-        },
-        {
-          id: 'ORD-' + Math.floor(100000 + Math.random() * 900000),
-          date: '2023-11-05',
-          total: 1048,
-          items: [
-            { id: '44', name: 'Lobster Thermidor', quantity: 1, price: 999 },
-            { id: '40', name: 'Puli Inji', quantity: 1, price: 129 }
-          ],
-          status: 'processing',
-          deliveryAddress: 'Office 203, Tech Park, Kazhakootam, Trivandrum',
-          paymentMethod: 'Card'
         }
       ];
       
       setOrderHistory(mockOrders);
-      setAddresses(['Apartment 4B, Skyline Heights, Palayam, Trivandrum', 'Office 203, Tech Park, Kazhakootam, Trivandrum']);
-      setPhone('+91 9876543210');
     }, 500);
     
     return () => clearTimeout(timer);
   }, []);
   
-  const handleSaveProfile = () => {
-    // Simulate API call to update user profile
-    const timer = setTimeout(() => {
-      toast.success('Profile updated successfully!');
-      setIsEditingProfile(false);
-      
-      // Provide audio feedback
-      if (mode === 'voice') {
-        speak('Profile updated successfully!');
-      }
-    }, 500);
-    
-    return () => clearTimeout(timer);
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleCardInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setCardData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleUpiInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setUpiData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleSave = () => {
+    profile.updateProfile(formData);
+    setIsEditing(false);
+    toast.success('Profile updated successfully');
+  };
+
+  const handleSaveCard = () => {
+    profile.updateCardDetails(cardData);
+    setIsEditingCard(false);
+    toast.success('Card details updated successfully');
+  };
+
+  const handleSaveUpi = () => {
+    profile.updateUpiDetails(upiData.upiId);
+    setIsEditingUpi(false);
+    toast.success('UPI details updated successfully');
+  };
+
+  const handleCancel = () => {
+    setFormData({
+      name: profile.name,
+      email: profile.email,
+      phone: profile.phone,
+      city: profile.city,
+      pinCode: profile.pinCode
+    });
+    setIsEditing(false);
+  };
+
+  const handleCancelCard = () => {
+    setCardData({
+      cardNumber: profile.cardDetails.cardNumber,
+      nameOnCard: profile.cardDetails.nameOnCard,
+      expiry: profile.cardDetails.expiry,
+      cvv: profile.cardDetails.cvv
+    });
+    setIsEditingCard(false);
+  };
+
+  const handleCancelUpi = () => {
+    setUpiData({
+      upiId: profile.upiId
+    });
+    setIsEditingUpi(false);
   };
   
   const handleSaveAddress = () => {
@@ -175,15 +224,19 @@ export function UserProfile() {
     }
   };
   
+  const handlePaymentMethodChange = (method: 'card' | 'upi' | 'cash') => {
+    profile.setPreferredPayment(method);
+    toast.success('Payment preference updated');
+  };
+  
   return (
     <>
       <Helmet>
-        <title>User Profile - AblEats</title>
-        <meta name="description" content="Manage your AblEats profile, view your order history, and update your delivery addresses." />
+        <title>My Profile - AblEats</title>
+        <meta name="description" content="View and edit your profile information" />
       </Helmet>
       
       <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        {/* Back Button */}
         <button
           onClick={() => navigate('/home')}
           className="flex items-center mb-6 text-gray-600 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
@@ -209,105 +262,352 @@ export function UserProfile() {
                     <User className="h-5 w-5 mr-2 text-primary" />
                     Account Details
                   </h2>
-                  <button 
-                    onClick={() => setIsEditingProfile(!isEditingProfile)}
-                    className="text-primary hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
-                    aria-label={isEditingProfile ? "Save profile changes" : "Edit profile information"}
-                  >
-                    {isEditingProfile ? (
-                      <Check className="h-5 w-5" />
-                    ) : (
-                      <Edit className="h-5 w-5" />
-                    )}
-                  </button>
+                  {!isEditing ? (
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="text-primary hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
+                      aria-label="Edit profile"
+                    >
+                      <Pencil className="h-5 w-5" />
+                    </button>
+                  ) : (
+                    <div className="flex space-x-4">
+                      <button
+                        onClick={handleSave}
+                        className="flex items-center text-green-600 hover:text-green-500"
+                        aria-label="Save changes"
+                      >
+                        <Check className="h-5 w-5 mr-2" />
+                        <span>Save</span>
+                      </button>
+                      <button
+                        onClick={handleCancel}
+                        className="flex items-center text-red-600 hover:text-red-500"
+                        aria-label="Cancel editing"
+                      >
+                        <X className="h-5 w-5 mr-2" />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
-                {isEditingProfile ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                        Full Name
-                      </label>
-                      <input
-                        id="name"
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
-                                 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                        placeholder="Enter your full name"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                        Email Address
-                      </label>
-                      <input
-                        id="email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
-                                 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                        placeholder="Enter your email"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
-                        Phone Number
-                      </label>
-                      <input
-                        id="phone"
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
-                                 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                        placeholder="Enter your phone number"
-                      />
-                    </div>
-                    
-                    <button
-                      onClick={handleSaveProfile}
-                      className="w-full py-2 rounded-xl bg-gradient-to-r from-primary to-secondary 
-                               text-white font-medium hover:opacity-90 transition-opacity mt-4
-                               focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                      aria-label="Save profile information"
-                    >
-                      Save Changes
-                    </button>
+                <div className="space-y-6">
+                  {/* Full Name */}
+                  <div>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      id="name"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      disabled={!isEditing}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    />
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-start">
-                      <User className="h-5 w-5 text-gray-500 mt-0.5 mr-3" />
-                      <div>
-                        <h3 className="text-sm text-gray-500">Full Name</h3>
-                        <p className="font-medium">{name}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start">
-                      <Mail className="h-5 w-5 text-gray-500 mt-0.5 mr-3" />
-                      <div>
-                        <h3 className="text-sm text-gray-500">Email Address</h3>
-                        <p className="font-medium">{email}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start">
-                      <Phone className="h-5 w-5 text-gray-500 mt-0.5 mr-3" />
-                      <div>
-                        <h3 className="text-sm text-gray-500">Phone Number</h3>
-                        <p className="font-medium">{phone}</p>
-                      </div>
-                    </div>
+
+                  {/* Email Address */}
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      id="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      disabled={!isEditing}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    />
                   </div>
-                )}
+
+                  {/* Phone Number */}
+                  <div>
+                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      id="phone"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      disabled={!isEditing}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
+                  {/* City */}
+                  <div>
+                    <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">
+                      City
+                    </label>
+                    <input
+                      type="text"
+                      id="city"
+                      name="city"
+                      value={formData.city}
+                      onChange={handleInputChange}
+                      disabled={!isEditing}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      placeholder="Enter your city"
+                    />
+                  </div>
+
+                  {/* PIN Code */}
+                  <div>
+                    <label htmlFor="pinCode" className="block text-sm font-medium text-gray-700 mb-1">
+                      PIN Code
+                    </label>
+                    <input
+                      type="text"
+                      id="pinCode"
+                      name="pinCode"
+                      value={formData.pinCode}
+                      onChange={handleInputChange}
+                      disabled={!isEditing}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      placeholder="Enter your PIN code"
+                      maxLength={6}
+                    />
+                  </div>
+                </div>
               </div>
               
+              {/* Card Details Section */}
+              <div className="glass-effect p-6 rounded-xl mb-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center">
+                    <CreditCard className="h-5 w-5 text-primary mr-2" />
+                    <h2 className="text-xl font-semibold gradient-text">Card Details</h2>
+                  </div>
+                  {!isEditingCard ? (
+                    <button
+                      onClick={() => setIsEditingCard(true)}
+                      className="flex items-center text-primary hover:text-primary/80"
+                      aria-label="Edit card details"
+                    >
+                      <Pencil className="h-5 w-5 mr-2" />
+                      <span>Edit</span>
+                    </button>
+                  ) : (
+                    <div className="flex space-x-4">
+                      <button
+                        onClick={handleSaveCard}
+                        className="flex items-center text-green-600 hover:text-green-500"
+                        aria-label="Save card changes"
+                      >
+                        <Check className="h-5 w-5 mr-2" />
+                        <span>Save</span>
+                      </button>
+                      <button
+                        onClick={handleCancelCard}
+                        className="flex items-center text-red-600 hover:text-red-500"
+                        aria-label="Cancel card editing"
+                      >
+                        <X className="h-5 w-5 mr-2" />
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="cardNumber" className="block text-sm font-medium text-gray-700 mb-1">
+                      Card Number
+                    </label>
+                    <input
+                      type="text"
+                      id="cardNumber"
+                      name="cardNumber"
+                      value={cardData.cardNumber}
+                      onChange={handleCardInputChange}
+                      disabled={!isEditingCard}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      maxLength={19}
+                      placeholder="1234 5678 9012 3456"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="nameOnCard" className="block text-sm font-medium text-gray-700 mb-1">
+                      Name on Card
+                    </label>
+                    <input
+                      type="text"
+                      id="nameOnCard"
+                      name="nameOnCard"
+                      value={cardData.nameOnCard}
+                      onChange={handleCardInputChange}
+                      disabled={!isEditingCard}
+                      className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent
+                               disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="expiry" className="block text-sm font-medium text-gray-700 mb-1">
+                        Expiry Date
+                      </label>
+                      <input
+                        type="text"
+                        id="expiry"
+                        name="expiry"
+                        value={cardData.expiry}
+                        onChange={handleCardInputChange}
+                        disabled={!isEditingCard}
+                        className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                                 focus:ring-2 focus:ring-primary focus:border-transparent
+                                 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        placeholder="MM/YY"
+                        maxLength={5}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cvv" className="block text-sm font-medium text-gray-700 mb-1">
+                        CVV
+                      </label>
+                      <input
+                        type="password"
+                        id="cvv"
+                        name="cvv"
+                        value={cardData.cvv}
+                        onChange={handleCardInputChange}
+                        disabled={!isEditingCard}
+                        className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                                 focus:ring-2 focus:ring-primary focus:border-transparent
+                                 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        placeholder="***"
+                        maxLength={3}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Methods Section */}
+              <div className="glass-effect p-6 rounded-xl mb-6">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center">
+                    <Wallet className="h-5 w-5 text-primary mr-2" />
+                    <h2 className="text-xl font-semibold gradient-text">Payment Methods</h2>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        checked={profile.preferredPayment === 'card'}
+                        onChange={() => handlePaymentMethodChange('card')}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>Card Payment</span>
+                    </label>
+
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        checked={profile.preferredPayment === 'upi'}
+                        onChange={() => handlePaymentMethodChange('upi')}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>UPI</span>
+                    </label>
+
+                    <label className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        checked={profile.preferredPayment === 'cash'}
+                        onChange={() => handlePaymentMethodChange('cash')}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <span>Cash on Delivery</span>
+                    </label>
+                  </div>
+
+                  {profile.preferredPayment === 'upi' && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-medium text-gray-700">UPI Details</h3>
+                        {!isEditingUpi ? (
+                          <button
+                            onClick={() => setIsEditingUpi(true)}
+                            className="flex items-center text-primary hover:text-primary/80"
+                            aria-label="Edit UPI details"
+                          >
+                            <Pencil className="h-4 w-4 mr-2" />
+                            <span>Edit</span>
+                          </button>
+                        ) : (
+                          <div className="flex space-x-4">
+                            <button
+                              onClick={handleSaveUpi}
+                              className="flex items-center text-green-600 hover:text-green-500"
+                              aria-label="Save UPI changes"
+                            >
+                              <Check className="h-4 w-4 mr-2" />
+                              <span>Save</span>
+                            </button>
+                            <button
+                              onClick={handleCancelUpi}
+                              className="flex items-center text-red-600 hover:text-red-500"
+                              aria-label="Cancel UPI editing"
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label htmlFor="upiId" className="block text-sm font-medium text-gray-700 mb-1">
+                          UPI ID
+                        </label>
+                        <input
+                          type="text"
+                          id="upiId"
+                          name="upiId"
+                          value={upiData.upiId}
+                          onChange={handleUpiInputChange}
+                          disabled={!isEditingUpi}
+                          className="w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                                   focus:ring-2 focus:ring-primary focus:border-transparent
+                                   disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          placeholder="username@upi"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Delivery Addresses Section */}
               <div className="glass-effect p-6 rounded-xl">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-xl font-semibold flex items-center">

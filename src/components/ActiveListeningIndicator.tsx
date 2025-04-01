@@ -82,7 +82,7 @@ export function ActiveListeningIndicator({ isListening, transcription }: ActiveL
             className="ml-2 bg-white/20 p-1 rounded-full hover:bg-white/30 transition-colors"
             aria-label="Show help information"
             onClick={() => {
-              window.dispatchEvent(new CustomEvent('voiceCommand', {
+              window.dispatchEvent(new CustomEvent('voice-command', {
                 detail: { command: 'help' }
               }));
             }}

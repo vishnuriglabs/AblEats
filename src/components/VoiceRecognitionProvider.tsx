@@ -110,10 +110,10 @@ export function VoiceRecognitionProvider({ children }: VoiceRecognitionProviderP
       }
     };
     
-    window.addEventListener('voiceCommand', handleVoiceCommand);
+    window.addEventListener('voice-command', handleVoiceCommand);
     
     return () => {
-      window.removeEventListener('voiceCommand', handleVoiceCommand);
+      window.removeEventListener('voice-command', handleVoiceCommand);
     };
   }, [processCommand, cancel]);
 

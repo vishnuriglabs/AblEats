@@ -6,14 +6,13 @@ import { useAuthStore } from '../store/authStore';
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuthStore();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-blue-50">
       <header className="glass-effect sticky top-0 z-50">
         <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link 
-            to="/" 
+            to="/home" 
             className="flex items-center space-x-2 gradient-text font-bold text-xl hover-glow"
             aria-label="AblEats Home"
           >
@@ -23,9 +22,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           
           <div className="flex items-center space-x-4">
             <Link
-              to={isAuthenticated ? "/profile" : "/login"}
+              to="/profile"
               className="p-2 text-gray-600 hover:text-primary transition-colors hover-glow"
-              aria-label={isAuthenticated ? "User Profile" : "Login"}
+              aria-label="User Profile"
             >
               <User className="h-6 w-6" />
             </Link>

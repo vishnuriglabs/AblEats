@@ -14,7 +14,10 @@ export function Home() {
   const [activeTab, setActiveTab] = useState<'restaurants' | 'foods'>('restaurants');
   const { speak, cancel } = useSpeechSynthesis();
   const { mode } = useAccessibilityStore();
+  const { addItemToCart } = useCartStore();
   const navigate = useNavigate();
+  const [hasSpokenIntro, setHasSpokenIntro] = useState(false);
+  const [waitingForRestaurantDetails, setWaitingForRestaurantDetails] = useState(false);
 
   // Filter restaurants and foods
   const filteredRestaurants = RESTAURANTS.filter(restaurant => 
@@ -43,7 +46,8 @@ export function Home() {
     setActiveTab(tab);
     if (mode === 'voice') {
       const resultCount = tab === 'restaurants' ? filteredRestaurants.length : filteredFoods.length;
-      speak(`Showing ${tab}. Found ${resultCount} items`);
+      speak(`Showing ${resultCount} ${tab}. Say "details" to hear more information about them.`);
+      setWaitingForRestaurantDetails(true);
     }
   };
 
@@ -55,6 +59,49 @@ export function Home() {
     }
   };
 
+  // Speak restaurant details
+  const speakRestaurantDetails = () => {
+    cancel(); // Cancel any ongoing speech
+    const details = filteredRestaurants.map((restaurant, index) => {
+      return `Restaurant ${index + 1}: ${restaurant.name}. 
+              ${restaurant.cuisine} cuisine. 
+              Rated ${restaurant.rating} stars. 
+              Delivery time ${restaurant.deliveryTime} minutes. 
+              ${restaurant.isVeg ? 'This is a vegetarian restaurant.' : ''}`;
+    }).join(' Next, ');
+    
+    speak(`Here are the restaurant details: ${details}`);
+  };
+
+  // Speak food details
+  const speakFoodDetails = () => {
+    cancel(); // Cancel any ongoing speech
+    const details = filteredFoods.map((food, index) => {
+      return `Item ${index + 1}: ${food.name}. Price: ${food.price} rupees. ${food.isVeg ? 'Vegetarian.' : ''}`;
+    }).join(' Next, ');
+    
+    speak(`Here are the available food items: ${details}`);
+  };
+
+  // Add item to cart
+  const handleAddToCart = (food: MenuItem, quantity: number = 1) => {
+    addItemToCart(food, 1); // Always add 1 item, ignore the passed quantity
+    toast.success(`Added ${food.name} to cart`, {
+      description: '1 item added to your cart',
+      icon: <ShoppingCart className="h-5 w-5" />
+    });
+  };
+
+  // Speak help information specific to home page
+  const speakHomeHelp = () => {
+    cancel();
+    speak(
+      'Available commands: Say "foods" to view food items, "add" followed by food name to add specific items, ' +
+      '"add item" followed by a number to add items by position, "show cart" to view your cart, ' +
+      '"search for" followed by what you want to find, and "show restaurants" to view restaurants.'
+    );
+  };
+
   // Listen for voice commands
   useEffect(() => {
     const handleVoiceCommand = (event: Event) => {
@@ -64,6 +111,75 @@ export function Home() {
       const command = customEvent.detail.command.toLowerCase();
       console.log('Home component received command:', command);
 
+      // Handle help command
+      if (command === 'help') {
+        speakHomeHelp();
+        return;
+      }
+
+      // Handle cart navigation
+      if (command === 'show cart' || command === 'go to cart' || command === 'view cart') {
+        speak('Opening your cart');
+        navigate('/cart');
+        return;
+      }
+
+      // Handle add food by name command
+      if (command.startsWith('add ')) {
+        const foodName = command.replace('add ', '').toLowerCase().trim();
+        console.log('Received add command for food:', foodName);
+        
+        if (activeTab !== 'foods') {
+          handleTabChange('foods');
+          speak('Switching to foods tab first');
+        }
+        
+        // First try exact match
+        let foundFood = MENU_ITEMS.find(item => 
+          item.name.toLowerCase() === foodName
+        );
+        
+        // If no exact match, try partial match
+        if (!foundFood) {
+          foundFood = MENU_ITEMS.find(item => 
+            item.name.toLowerCase().includes(foodName)
+          );
+        }
+
+        if (foundFood) {
+          console.log('Found matching food:', foundFood.name);
+          handleAddToCart(foundFood); // Don't pass quantity, use default of 1
+          speak(`Added 1 ${foundFood.name} to your cart.`);
+        } else {
+          console.log('No matching food found for:', foodName);
+          console.log('Available foods:', MENU_ITEMS.map(item => item.name).join(', '));
+          speak(`Sorry, I couldn't find ${foodName} in our menu. Please try a different item.`);
+        }
+        return;
+      }
+
+      // Handle add to cart commands by number
+      if (command.startsWith('add item ')) {
+        const itemNumber = parseInt(command.replace('add item ', ''));
+        if (!isNaN(itemNumber) && itemNumber > 0) {
+          if (activeTab === 'foods') {
+            const index = itemNumber - 1;
+            if (index >= 0 && index < filteredFoods.length) {
+              const food = filteredFoods[index];
+              handleAddToCart(food); // Don't pass quantity, use default of 1
+              speak(`Added 1 ${food.name} to your cart`);
+            } else {
+              speak('Sorry, that item number is not valid. Please try a different number.');
+            }
+          } else {
+            speak('Please switch to the foods tab first to add items to cart.');
+          }
+        } else {
+          speak('Please specify a valid item number. For example, say "add item 1".');
+        }
+        return;
+      }
+
       // Handle search commands
       if (command.startsWith('search for ')) {
         const searchTerm = command.replace('search for ', '');
@@ -72,13 +188,24 @@ export function Home() {
       }
 
       // Handle filter commands
-      if (command === 'show restaurants' || command === 'view restaurants') {
+      if (command === 'show restaurants' || command === 'restaurants') {
         handleTabChange('restaurants');
         return;
       }
 
-      if (command === 'show foods' || command === 'view foods') {
+      if (command === 'show foods' || command === 'foods') {
         handleTabChange('foods');
+        return;
+      }
+
+      // Handle details request based on active tab
+      if ((command.includes('yes') || command === 'details') && waitingForRestaurantDetails) {
+        if (activeTab === 'restaurants') {
+          speakRestaurantDetails();
+        } else {
+          speakFoodDetails();
+        }
+        setWaitingForRestaurantDetails(false);
         return;
       }
 
@@ -104,20 +231,22 @@ export function Home() {
       }
     };
 
-    window.addEventListener('voiceCommand', handleVoiceCommand);
-    return () => window.removeEventListener('voiceCommand', handleVoiceCommand);
-  }, [mode, speak, showVegOnly, handleSearch, handleTabChange]);
+    // Add event listener
+    window.addEventListener('voice-command', handleVoiceCommand as EventListener);
+    return () => window.removeEventListener('voice-command', handleVoiceCommand as EventListener);
+  }, [navigate, speak, activeTab, filteredFoods]);
 
   // Announce initial page load with more context
   useEffect(() => {
-    if (mode === 'voice') {
+    if (mode === 'voice' && !hasSpokenIntro) {
       const itemCount = activeTab === 'restaurants' ? filteredRestaurants.length : filteredFoods.length;
       const message = `Welcome to the home page. Currently showing ${itemCount} ${activeTab}. ${
         showVegOnly ? 'Filtered to show vegetarian items only. ' : ''
       }You can search, filter by type, or say help for more options.`;
       speak(message);
+      setHasSpokenIntro(true);
     }
-  }, [mode, activeTab, filteredRestaurants.length, filteredFoods.length, showVegOnly, speak]);
+  }, [mode, activeTab, filteredRestaurants.length, filteredFoods.length, showVegOnly, speak, hasSpokenIntro]);
 
   return (
     <div className="space-y-8">

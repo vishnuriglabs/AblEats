@@ -12,44 +12,47 @@ import {
   AlertTriangle, 
   X,
   Phone,
-  CreditCard as CardIcon
+  CreditCard as CardIcon,
+  Wallet
 } from 'lucide-react';
 import { useCartStore } from '../store/cartStore';
+import { useProfileStore } from '../store/profileStore';
 import { toast } from 'sonner';
 import { Helmet } from 'react-helmet-async';
 import { useAccessibilityStore } from '../store/accessibilityStore';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 
 // Define payment method type
-type PaymentMethod = 'card' | 'upi' | 'cod';
+type PaymentMethod = 'card' | 'upi' | 'cash';
 
 export function Checkout() {
   const navigate = useNavigate();
   const { items, clearCart, getTotalPrice } = useCartStore();
   const { mode } = useAccessibilityStore();
   const { speak } = useSpeechSynthesis();
+  const profile = useProfileStore();
   
-  // State for payment method
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
+  // Set UPI as default payment method
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
   
   // State for delivery address
-  const [address, setAddress] = useState({
-    name: '',
-    phone: '',
-    address: '',
-    city: '',
-    pincode: ''
+  const [formData, setFormData] = useState({
+    fullName: profile.name,
+    phone: profile.phone,
+    address: profile.getActiveAddress() || '',
+    city: profile.city || '',
+    pinCode: profile.pinCode || ''
   });
 
   // State for payment details
   const [cardDetails, setCardDetails] = useState({
-    cardNumber: '',
-    nameOnCard: '',
-    expiry: '',
-    cvv: ''
+    cardNumber: profile.cardDetails.cardNumber,
+    nameOnCard: profile.cardDetails.nameOnCard,
+    expiry: profile.cardDetails.expiry,
+    cvv: profile.cardDetails.cvv
   });
   
-  const [upiId, setUpiId] = useState('');
+  const [upiId, setUpiId] = useState(profile.upiId);
   
   // State for confirmation dialog
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -60,56 +63,177 @@ export function Checkout() {
   const tax = subtotal * 0.05;
   const total = subtotal + deliveryFee + tax;
 
-  // Redirect to cart if empty
-  useEffect(() => {
-    if (items.length === 0) {
-      navigate('/cart');
-      toast.error('Your cart is empty');
-    }
-  }, [items, navigate]);
-  
   // Provide audio feedback when page loads
   useEffect(() => {
     if (mode === 'voice') {
-      speak('Checkout page. Please fill in your delivery address and select a payment method. You can pay with card, UPI, or cash on delivery.');
+      speak(
+        'Checkout page. By default, we are using UPI payment method. ' +
+        'If you want to change payment method, say "pay by card" or "cash on delivery". ' +
+        'To proceed with UPI payment, say "place order". ' +
+        'You can also say "help" for available commands.'
+      );
     }
   }, [mode, speak]);
 
-  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setAddress(prev => ({ ...prev, [name]: value }));
-  };
+  // Handle voice commands
+  useEffect(() => {
+    const handleVoiceCommand = (event: Event) => {
+      const customEvent = event as CustomEvent<{command: string}>;
+      if (!customEvent.detail?.command) return;
 
-  const handleCardDetailsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setCardDetails(prev => ({ ...prev, [name]: value }));
-  };
+      const command = customEvent.detail.command.toLowerCase();
+      console.log('Checkout received command:', command);
 
-  const handlePaymentMethodChange = (method: PaymentMethod) => {
-    setPaymentMethod(method);
-    
-    // Provide audio feedback
-    if (mode === 'voice') {
-      const methodNames = {
-        card: 'Credit or Debit Card',
-        upi: 'UPI payment',
-        cod: 'Cash on Delivery'
-      };
-      speak(`Selected payment method: ${methodNames[method]}`);
+      // Handle help command
+      if (command === 'help') {
+        speak(
+          'Available commands: Say "place order" to confirm your order with UPI payment, ' +
+          'or change payment method by saying "pay by card" or "cash on delivery". ' +
+          'Say "review order" to hear order details, or "go back" to return to cart.'
+        );
+        return;
+      }
+
+      // Handle place order command
+      if (command === 'place order' || 
+          command.includes('place') || 
+          command.includes('order') ||
+          command.includes('palce') || // Handle common misspelling
+          command.includes('oder')) {  // Handle common misspelling
+        console.log('Place order command received:', command);
+        
+        // Validate form
+        if (!formData.fullName || !formData.phone || !formData.address || !formData.city || !formData.pinCode) {
+          speak('Please fill in all delivery details before placing the order.');
+          toast.error('Please fill in all required fields');
+          return;
+        }
+
+        // Validate payment method specific requirements
+        if (paymentMethod === 'upi' && !profile.upiId) {
+          speak('Please add your UPI ID in your profile before placing the order.');
+          toast.error('Please add your UPI ID in your profile');
+          return;
+        }
+
+        // Process the order
+        try {
+          // Clear cart first
+          clearCart();
+          
+          // Provide success feedback before navigation
+          speak('Thank you for ordering with AblEats. Your food will be delivered soon.');
+          toast.success('Order placed successfully!');
+          
+          // Navigate to success page after a short delay to ensure speech completes
+          setTimeout(() => {
+            navigate('/order-success', { replace: true });
+          }, 100);
+        } catch (error) {
+          console.error('Error placing order:', error);
+          speak('Sorry, there was an error placing your order. Please try again.');
+          toast.error('Failed to place order. Please try again.');
+        }
+        return;
+      }
+
+      // Handle payment method selection
+      if (command.includes('pay by card') || command.includes('card payment')) {
+        setPaymentMethod('card');
+        speak(
+          'Payment method changed to card payment. ' +
+          'Your saved card details will be used. ' +
+          'Say "place order" to complete your purchase.'
+        );
+        return;
+      }
+
+      if (command.includes('cash') || command.includes('cash on delivery')) {
+        setPaymentMethod('cash');
+        speak(
+          'Payment method changed to cash on delivery. ' +
+          'You will pay in cash when your order is delivered. ' +
+          'Say "place order" to complete your purchase.'
+        );
+        return;
+      }
+
+      // Handle review order command
+      if (command === 'review order') {
+        speak(
+          `Your order total is ${total} rupees, including ${deliveryFee} rupees delivery fee and ${tax} rupees tax. ` +
+          `Delivery address is ${formData.address}. ` +
+          `Payment will be made via ${
+            paymentMethod === 'card' ? 'card payment' : 
+            paymentMethod === 'upi' ? 'UPI' : 
+            'cash on delivery'
+          }. ` +
+          'Say "place order" to confirm your order.'
+        );
+        return;
+      }
+
+      // Handle go back command
+      if (command === 'go back') {
+        navigate('/cart');
+        return;
+      }
+    };
+
+    window.addEventListener('voice-command', handleVoiceCommand);
+    return () => window.removeEventListener('voice-command', handleVoiceCommand);
+  }, [navigate, speak, total, deliveryFee, tax, formData, paymentMethod, profile.upiId, clearCart]);
+
+  useEffect(() => {
+    // Update card details when payment method changes to card
+    if (paymentMethod === 'card') {
+      setCardDetails({
+        cardNumber: profile.cardDetails.cardNumber,
+        nameOnCard: profile.cardDetails.nameOnCard,
+        expiry: profile.cardDetails.expiry,
+        cvv: profile.cardDetails.cvv
+      });
     }
+  }, [paymentMethod, profile.cardDetails]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
-  const handlePlaceOrder = () => {
-    // Show confirmation dialog
-    setShowConfirmation(true);
-    
-    // Provide audio feedback
-    if (mode === 'voice') {
-      speak(`Please confirm your order. Total amount is ${total.toFixed(2)} rupees. Payment method is ${
-        paymentMethod === 'card' ? 'Credit or Debit Card' : 
-        paymentMethod === 'upi' ? 'UPI payment' : 
-        'Cash on Delivery'
-      }`);
+  const handlePlaceOrder = async () => {
+    // Validate form
+    if (!formData.fullName || !formData.phone || !formData.address || !formData.city || !formData.pinCode) {
+      toast.error('Please fill in all required fields');
+      speak('Please fill in all required delivery details before placing the order.');
+      return;
+    }
+
+    // Validate payment method specific requirements
+    if (paymentMethod === 'upi' && !profile.upiId) {
+      toast.error('Please add your UPI ID in your profile');
+      speak('Please add your UPI ID in your profile before placing the order.');
+      return;
+    }
+
+    try {
+      // Simulate order processing
+      speak('Processing your order. Please wait.');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Clear cart and navigate to success page
+      clearCart();
+      navigate('/order-success');
+      
+      if (mode === 'voice') {
+        speak('Order placed successfully! Thank you for ordering with AblEats. Your food will be delivered soon.');
+      }
+    } catch (error) {
+      toast.error('Failed to place order. Please try again.');
+      speak('Sorry, there was an error placing your order. Please try again.');
     }
   };
 
@@ -142,20 +266,20 @@ export function Checkout() {
     <>
       <Helmet>
         <title>Checkout - AblEats</title>
-        <meta name="description" content="Complete your order - Choose your payment method and deliver address for your food delivery." />
+        <meta name="description" content="Complete your food order by providing delivery details." />
       </Helmet>
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 py-8">
         <button
           onClick={() => navigate('/cart')}
           className="flex items-center text-gray-600 hover:text-primary mb-8"
-          aria-label="Return to cart"
+          aria-label="Back to cart"
         >
           <ArrowLeft className="h-5 w-5 mr-2" />
           Back to Cart
         </button>
 
         <div className="flex items-center mb-8">
-          <ShoppingBag className="h-8 w-8 mr-3 text-primary" />
+          <ShoppingCart className="h-8 w-8 mr-3 text-primary" />
           <h1 className="text-3xl font-bold gradient-text">Checkout</h1>
         </div>
         
@@ -169,271 +293,163 @@ export function Checkout() {
                 <h2 className="text-xl font-semibold">Delivery Address</h2>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    name="name"
-                    value={address.name}
-                    onChange={handleAddressChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    required
-                    aria-required="true"
-                  />
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      id="fullName"
+                      name="fullName"
+                      value={formData.fullName}
+                      onChange={handleInputChange}
+                      className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      id="phone"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent"
+                      required
+                    />
+                  </div>
                 </div>
-                
+
                 <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    id="phone"
-                    name="phone"
-                    value={address.phone}
-                    onChange={handleAddressChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    required
-                    aria-required="true"
-                  />
-                </div>
-                
-                <div className="md:col-span-2">
                   <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">
-                    Address
+                    Delivery Address
                   </label>
-                  <input
-                    type="text"
+                  <textarea
                     id="address"
                     name="address"
-                    value={address.address}
-                    onChange={handleAddressChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    rows={3}
+                    className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                             focus:ring-2 focus:ring-primary focus:border-transparent"
                     required
-                    aria-required="true"
                   />
                 </div>
-                
-                <div>
-                  <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    id="city"
-                    name="city"
-                    value={address.city}
-                    onChange={handleAddressChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    required
-                    aria-required="true"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="pincode" className="block text-sm font-medium text-gray-700 mb-1">
-                    PIN Code
-                  </label>
-                  <input
-                    type="text"
-                    id="pincode"
-                    name="pincode"
-                    value={address.pincode}
-                    onChange={handleAddressChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    required
-                    aria-required="true"
-                  />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">
+                      City
+                    </label>
+                    <input
+                      type="text"
+                      id="city"
+                      name="city"
+                      value={formData.city}
+                      onChange={handleInputChange}
+                      className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="pinCode" className="block text-sm font-medium text-gray-700 mb-1">
+                      PIN Code
+                    </label>
+                    <input
+                      type="text"
+                      id="pinCode"
+                      name="pinCode"
+                      value={formData.pinCode}
+                      onChange={handleInputChange}
+                      className="block w-full px-4 py-2 rounded-lg bg-white/50 border border-gray-200 
+                               focus:ring-2 focus:ring-primary focus:border-transparent"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
             </div>
             
-            {/* Payment Method */}
-            <div className="glass-effect rounded-xl p-6">
-              <div className="flex items-center mb-4">
-                <CreditCard className="h-5 w-5 text-primary mr-2" />
-                <h2 className="text-xl font-semibold">Payment Method</h2>
-              </div>
-              
+            {/* Payment Method Selection */}
+            <div className="glass-effect p-6 rounded-xl mb-6">
+              <h2 className="text-xl font-semibold mb-6 flex items-center">
+                <Wallet className="h-6 w-6 text-primary mr-2" />
+                Choose Payment Method
+              </h2>
+
               <div className="space-y-4">
-                <div className="flex flex-col space-y-4">
-                  {/* Card Payment Option */}
-                  <label className={`relative flex items-center p-4 border rounded-lg cursor-pointer
-                    ${paymentMethod === 'card' ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <label className="block p-4 rounded-lg border border-gray-200 hover:border-primary cursor-pointer transition-colors">
+                  <div className="flex items-center">
                     <input
                       type="radio"
                       name="paymentMethod"
-                      value="card"
                       checked={paymentMethod === 'card'}
-                      onChange={() => handlePaymentMethodChange('card')}
-                      className="sr-only"
-                      aria-label="Pay with Credit or Debit Card"
+                      onChange={() => setPaymentMethod('card')}
+                      className="text-primary focus:ring-primary"
                     />
-                    <div className="flex items-center">
-                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3
-                        ${paymentMethod === 'card' ? 'border-primary' : 'border-gray-400'}`}>
-                        {paymentMethod === 'card' && <div className="w-3 h-3 rounded-full bg-primary" />}
-                      </div>
-                      <CardIcon className="h-6 w-6 text-gray-500 mr-3" />
-                      <div>
-                        <span className="font-medium">Credit/Debit Card</span>
-                        <p className="text-sm text-gray-500">Pay securely with your card</p>
-                      </div>
+                    <CreditCard className="h-5 w-5 ml-3 mr-2 text-gray-600" />
+                    <span className="font-medium">Card Payment</span>
+                  </div>
+                  {paymentMethod === 'card' && (
+                    <div className="mt-4 pl-8">
+                      <p className="text-sm text-gray-600">
+                        {profile.cardDetails.cardNumber ? 
+                          `Card ending in ${profile.cardDetails.cardNumber.slice(-4)}` :
+                          'No card saved. Please add card details in your profile.'}
+                      </p>
                     </div>
-                  </label>
-                  
-                  {/* UPI Payment Option */}
-                  <label className={`relative flex items-center p-4 border rounded-lg cursor-pointer
-                    ${paymentMethod === 'upi' ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  )}
+                </label>
+
+                <label className="block p-4 rounded-lg border border-gray-200 hover:border-primary cursor-pointer transition-colors">
+                  <div className="flex items-center">
                     <input
                       type="radio"
                       name="paymentMethod"
-                      value="upi"
                       checked={paymentMethod === 'upi'}
-                      onChange={() => handlePaymentMethodChange('upi')}
-                      className="sr-only"
-                      aria-label="Pay with UPI"
+                      onChange={() => setPaymentMethod('upi')}
+                      className="text-primary focus:ring-primary"
                     />
-                    <div className="flex items-center">
-                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3
-                        ${paymentMethod === 'upi' ? 'border-primary' : 'border-gray-400'}`}>
-                        {paymentMethod === 'upi' && <div className="w-3 h-3 rounded-full bg-primary" />}
-                      </div>
-                      <Phone className="h-6 w-6 text-gray-500 mr-3" />
-                      <div>
-                        <span className="font-medium">UPI</span>
-                        <p className="text-sm text-gray-500">Pay using UPI apps like Google Pay, PhonePe, etc.</p>
-                      </div>
+                    <span className="ml-3 font-medium">UPI Payment</span>
+                  </div>
+                  {paymentMethod === 'upi' && (
+                    <div className="mt-4 pl-8">
+                      <p className="text-sm text-gray-600">
+                        {profile.upiId ? 
+                          `UPI ID: ${profile.upiId}` :
+                          'No UPI ID saved. Please add UPI details in your profile.'}
+                      </p>
                     </div>
-                  </label>
-                  
-                  {/* COD Payment Option */}
-                  <label className={`relative flex items-center p-4 border rounded-lg cursor-pointer
-                    ${paymentMethod === 'cod' ? 'border-primary bg-primary/5' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  )}
+                </label>
+
+                <label className="block p-4 rounded-lg border border-gray-200 hover:border-primary cursor-pointer transition-colors">
+                  <div className="flex items-center">
                     <input
                       type="radio"
                       name="paymentMethod"
-                      value="cod"
-                      checked={paymentMethod === 'cod'}
-                      onChange={() => handlePaymentMethodChange('cod')}
-                      className="sr-only"
-                      aria-label="Pay with Cash on Delivery"
+                      checked={paymentMethod === 'cash'}
+                      onChange={() => setPaymentMethod('cash')}
+                      className="text-primary focus:ring-primary"
                     />
-                    <div className="flex items-center">
-                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3
-                        ${paymentMethod === 'cod' ? 'border-primary' : 'border-gray-400'}`}>
-                        {paymentMethod === 'cod' && <div className="w-3 h-3 rounded-full bg-primary" />}
-                      </div>
-                      <ShoppingBag className="h-6 w-6 text-gray-500 mr-3" />
-                      <div>
-                        <span className="font-medium">Cash on Delivery</span>
-                        <p className="text-sm text-gray-500">Pay when your order is delivered</p>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-                
-                {/* Additional fields based on payment method */}
-                {paymentMethod === 'card' && (
-                  <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                    <h3 className="text-sm font-medium mb-3">Card Details</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <label htmlFor="cardNumber" className="block text-xs text-gray-500 mb-1">
-                          Card Number
-                        </label>
-                        <input
-                          type="text"
-                          id="cardNumber"
-                          name="cardNumber"
-                          value={cardDetails.cardNumber}
-                          onChange={handleCardDetailsChange}
-                          placeholder="1234 5678 9012 3456"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
-                          maxLength={19}
-                        />
-                      </div>
-                      
-                      <div className="md:col-span-2">
-                        <label htmlFor="nameOnCard" className="block text-xs text-gray-500 mb-1">
-                          Name on Card
-                        </label>
-                        <input
-                          type="text"
-                          id="nameOnCard"
-                          name="nameOnCard"
-                          value={cardDetails.nameOnCard}
-                          onChange={handleCardDetailsChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label htmlFor="expiry" className="block text-xs text-gray-500 mb-1">
-                          Expiry Date
-                        </label>
-                        <input
-                          type="text"
-                          id="expiry"
-                          name="expiry"
-                          value={cardDetails.expiry}
-                          onChange={handleCardDetailsChange}
-                          placeholder="MM/YY"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
-                          maxLength={5}
-                        />
-                      </div>
-                      
-                      <div>
-                        <label htmlFor="cvv" className="block text-xs text-gray-500 mb-1">
-                          CVV
-                        </label>
-                        <input
-                          type="password"
-                          id="cvv"
-                          name="cvv"
-                          value={cardDetails.cvv}
-                          onChange={handleCardDetailsChange}
-                          placeholder="***"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
-                          maxLength={3}
-                        />
-                      </div>
-                    </div>
+                    <span className="ml-3 font-medium">Cash on Delivery</span>
                   </div>
-                )}
-                
-                {paymentMethod === 'upi' && (
-                  <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                    <h3 className="text-sm font-medium mb-3">UPI Details</h3>
-                    <div>
-                      <label htmlFor="upiId" className="block text-xs text-gray-500 mb-1">
-                        UPI ID
-                      </label>
-                      <input
-                        type="text"
-                        id="upiId"
-                        value={upiId}
-                        onChange={(e) => setUpiId(e.target.value)}
-                        placeholder="example@upi"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-transparent"
-                      />
+                  {paymentMethod === 'cash' && (
+                    <div className="mt-4 pl-8">
+                      <p className="text-sm text-gray-600">Pay in cash when your order is delivered</p>
                     </div>
-                  </div>
-                )}
-                
-                {paymentMethod === 'cod' && (
-                  <div className="mt-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                    <div className="flex items-center text-sm text-gray-600">
-                      <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2" />
-                      <p>Please keep exact change ready for the delivery person.</p>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </label>
               </div>
             </div>
           </div>
@@ -477,7 +493,7 @@ export function Checkout() {
                 </div>
                 
                 <div className="text-sm text-gray-500 mt-1">
-                  {paymentMethod === 'cod' ? 'Pay on delivery' : paymentMethod === 'upi' ? 'Pay via UPI' : 'Pay with Card'}
+                  {paymentMethod === 'cash' ? 'Pay in cash' : paymentMethod === 'upi' ? 'Pay via UPI' : 'Pay with Card'}
                 </div>
               </div>
               

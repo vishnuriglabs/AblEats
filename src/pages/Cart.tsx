@@ -19,14 +19,78 @@ export function Cart() {
   const tax = subtotal * 0.05;
   const total = subtotal + deliveryFee + tax;
 
-  // Provide audio feedback for screen reader users
+  // Speak cart summary when page loads
   useEffect(() => {
-    if (mode === 'voice' && items.length > 0) {
-      speak(`Your cart has ${items.length} items. Total price: ${total.toFixed(2)} rupees.`);
-    } else if (mode === 'voice' && items.length === 0) {
-      speak('Your cart is empty. Please add items to proceed to checkout.');
+    if (mode === 'voice') {
+      const message = items.length > 0
+        ? `You have ${items.length} items in your cart. Total amount is ${total} rupees. Say "proceed to checkout" to place your order, or "help" to hear available commands.`
+        : 'Your cart is empty. Say "go to home" to browse food items.';
+      speak(message);
     }
   }, [mode, items.length, total, speak]);
+
+  // Listen for voice commands
+  useEffect(() => {
+    const handleVoiceCommand = (event: Event) => {
+      const customEvent = event as CustomEvent<{command: string}>;
+      if (!customEvent.detail?.command) return;
+
+      const command = customEvent.detail.command.toLowerCase();
+      console.log('Cart received command:', command);
+
+      // Handle help command
+      if (command === 'help') {
+        speak(
+          'Available commands: Say "proceed to checkout" to place your order, ' +
+          '"clear cart" to remove all items, ' +
+          '"update quantity" followed by item name and number to change quantity, ' +
+          'or "go to home" to continue shopping.'
+        );
+        return;
+      }
+
+      // Handle clear cart command
+      if (command === 'clear cart') {
+        clearCart();
+        speak('Cart has been cleared');
+        toast.success('Cart cleared');
+        return;
+      }
+
+      // Handle checkout command
+      if (command === 'proceed to checkout' || 
+          command === 'checkout' || 
+          command === 'place order') {
+        if (items.length > 0) {
+          speak('Taking you to checkout');
+          navigate('/checkout');
+        } else {
+          speak('Your cart is empty. Please add items before checking out.');
+        }
+        return;
+      }
+
+      // Handle update quantity commands
+      if (command.startsWith('update quantity') || command.startsWith('set quantity')) {
+        const parts = command.split(' ');
+        const quantity = parseInt(parts[parts.length - 1]);
+        const itemName = parts.slice(2, -1).join(' ');
+        
+        const item = items.find(i => i.name.toLowerCase().includes(itemName.toLowerCase()));
+        if (item && !isNaN(quantity) && quantity > 0) {
+          updateQuantity(item.id, quantity);
+          speak(`Updated ${item.name} quantity to ${quantity}`);
+          toast.success(`Updated quantity`, {
+            description: `Set ${item.name} quantity to ${quantity}`
+          });
+        }
+        return;
+      }
+    };
+
+    window.addEventListener('voice-command', handleVoiceCommand);
+    return () => window.removeEventListener('voice-command', handleVoiceCommand);
+  }, [items, clearCart, updateQuantity, speak, navigate]);
 
   const handleQuantityChange = (itemId: string, currentQuantity: number, delta: number) => {
     const newQuantity = currentQuantity + delta;

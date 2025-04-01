@@ -52,12 +52,12 @@ export function Welcome() {
 
         <div className="mt-12">
           <Link
-            to="/login"
+            to="/home"
             className="inline-flex items-center justify-center px-8 py-3 text-base font-medium rounded-full 
                      bg-gradient-to-r from-primary to-secondary text-white hover-glow
                      md:py-4 md:text-lg md:px-10"
             role="button"
-            aria-label="Continue to login page"
+            aria-label="Continue to home page"
           >
             Continue to Home
             <ArrowRight className="ml-2 h-5 w-5" />

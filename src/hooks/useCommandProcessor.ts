@@ -14,7 +14,7 @@ export function useCommandProcessor(): CommandProcessorResult {
   const { setMode, mode } = useAccessibilityStore();
 
   const emitVoiceCommand = useCallback((command: string) => {
-    const event = new CustomEvent('voiceCommand', { 
+    const event = new CustomEvent('voice-command', { 
       detail: { command },
       bubbles: true 
     });
@@ -53,19 +53,9 @@ export function useCommandProcessor(): CommandProcessorResult {
           normalizedCommand.includes('show commands') ||
           normalizedCommand.includes('available commands')) {
         
-        cancel();
-        
-        const helpMessage = 
-          'Here are the available voice commands: ' +
-          'For navigation, say "Go to Home". ' +
-          'For searching, say "Search for" followed by what you want to find. ' +
-          'To filter results, say "Show restaurants" or "Show foods". ' +
-          'For dietary preferences, say "Show vegetarian only" or "Show all items". ' +
-          'For accessibility modes, say: Voice mode, Deaf mode, or Mute mode. ' +
-          'Say Help again to hear these commands again.';
-        
-        speak(helpMessage);
-        toast.success('Help information provided');
+        console.log('Help command recognized');
+        // Emit help command for current page to handle
+        emitVoiceCommand('help');
         return;
       }
       
@@ -80,6 +70,40 @@ export function useCommandProcessor(): CommandProcessorResult {
         return;
       }
 
+      // Cart navigation commands
+      if (normalizedCommand === 'go to cart' || 
+          normalizedCommand === 'show cart' ||
+          normalizedCommand === 'view cart' ||
+          normalizedCommand === 'cart') {
+        console.log('Cart command recognized, navigating...');
+        speak('Opening your cart');
+        toast.success('Opening cart');
+        navigate('/cart');
+        return;
+      }
+
+      // Checkout navigation commands
+      if (normalizedCommand === 'proceed to checkout' ||
+          normalizedCommand === 'go to checkout' ||
+          normalizedCommand === 'checkout' ||
+          normalizedCommand === 'place order') {
+        console.log('Checkout command recognized, navigating...');
+        speak('Taking you to checkout');
+        toast.success('Proceeding to checkout');
+        navigate('/checkout');
+        return;
+      }
+
+      // Clear cart command
+      if (normalizedCommand === 'clear cart' || 
+          normalizedCommand === 'empty cart' ||
+          normalizedCommand === 'remove all items') {
+        console.log('Clear cart command recognized');
+        emitVoiceCommand('clear cart');
+        speak('Clearing your cart');
+        return;
+      }
+
       // Search commands
       if (normalizedCommand.startsWith('search for ')) {
         const searchTerm = normalizedCommand.replace('search for ', '');
@@ -88,20 +112,40 @@ export function useCommandProcessor(): CommandProcessorResult {
         return;
       }
 
+      // Add to cart commands
+      if (normalizedCommand.startsWith('add ')) {
+        console.log('Add to cart command recognized:', normalizedCommand);
+        emitVoiceCommand(normalizedCommand);
+        return;
+      }
+
       // Filter commands - don't navigate for these
       if (normalizedCommand === 'show restaurants' || 
+          normalizedCommand === 'restaurants' ||
           normalizedCommand === 'view restaurants') {
-        console.log('Filter command recognized');
+        console.log('Filter command recognized: show restaurants');
         speak('Showing restaurants');
         emitVoiceCommand('show restaurants');
         return;
       }
 
       if (normalizedCommand === 'show foods' || 
+          normalizedCommand === 'foods' ||
           normalizedCommand === 'view foods') {
-        console.log('Filter command recognized');
+        console.log('Filter command recognized: show foods');
         speak('Showing food items');
         emitVoiceCommand('show foods');
+        return;
+      }
+
+      // Restaurant details commands
+      if (normalizedCommand === 'yes' || 
+          normalizedCommand === 'yes please' ||
+          normalizedCommand === 'show details' ||
+          normalizedCommand === 'tell me more' ||
+          normalizedCommand === 'details') {
+        console.log('Restaurant details requested');
+        emitVoiceCommand('yes');
         return;
       }
 

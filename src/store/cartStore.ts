@@ -42,16 +42,16 @@ export const useCartStore = create<CartState>((set, get) => ({
       const existingItem = state.items.find((i) => i.id === item.id);
       
       if (existingItem) {
-        // If item already exists, update quantity
+        // If item exists, replace its quantity with the new quantity
         return {
           items: state.items.map((i) =>
             i.id === item.id
-              ? { ...i, quantity: i.quantity + quantity }
+              ? { ...i, quantity: quantity }
               : i
           ),
         };
       } else {
-        // Otherwise add new item
+        // Add new item with exact quantity specified
         return {
           items: [...state.items, { ...item, quantity }],
         };

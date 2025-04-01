@@ -16,7 +16,6 @@ export function useContinuousSpeechRecognition(): ContinuousSpeechRecognitionRes
   const [lastCommand, setLastCommand] = useState('');
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const recognitionRef = useRef<any>(null);
-  const timeoutRef = useRef<number | null>(null);
 
   // Check microphone permission on mount
   useEffect(() => {
@@ -35,23 +34,13 @@ export function useContinuousSpeechRecognition(): ContinuousSpeechRecognitionRes
       });
   }, []);
 
-  const clearTranscript = useCallback(() => {
-    setTranscript('');
-    setLastCommand('');
-    if (timeoutRef.current) {
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
-
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
-    clearTranscript();
     setIsListening(false);
-  }, [clearTranscript]);
+  }, []);
 
   const startListening = useCallback(() => {
     if (!hasPermission) {
@@ -70,41 +59,42 @@ export function useContinuousSpeechRecognition(): ContinuousSpeechRecognitionRes
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
 
-    recognition.continuous = true;
+    // Set to false for single command at a time
+    recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = 'en-US';
 
     recognition.onstart = () => {
       console.log('Speech recognition started');
       setIsListening(true);
-      clearTranscript();
+      // Clear previous transcript when starting new recognition
+      setTranscript('');
     };
 
     recognition.onresult = (event: any) => {
-      const currentTranscript = Array.from(event.results)
-        .map((result: any) => result[0])
-        .map(result => result.transcript)
-        .join(' ')
-        .trim();
+      // Get only the last result
+      const lastResult = event.results[event.results.length - 1];
+      const currentTranscript = lastResult[0].transcript.trim();
       
-      if (currentTranscript) {
-        console.log('New transcript:', currentTranscript);
-        setTranscript(currentTranscript);
-        setLastCommand(currentTranscript);
+      console.log('New transcript:', currentTranscript);
+      setTranscript(currentTranscript);
+      setLastCommand(currentTranscript);
 
-        // Clear the transcript after a delay
-        if (timeoutRef.current) {
-          window.clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = window.setTimeout(clearTranscript, 2000);
-      }
+      // Stop the current recognition instance
+      stopListening();
+
+      // Start a new recognition instance after a short delay
+      setTimeout(() => {
+        startListening();
+      }, 100);
     };
 
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       
       if (event.error === 'no-speech') {
-        // Don't show error for no speech, just keep listening
+        // Don't show error for no speech, just restart
+        startListening();
         return;
       }
       
@@ -122,35 +112,26 @@ export function useContinuousSpeechRecognition(): ContinuousSpeechRecognitionRes
     };
 
     recognition.onend = () => {
-      console.log('Speech recognition ended, restarting...');
-      clearTranscript();
-      // Automatically restart if we're supposed to be listening
+      console.log('Speech recognition ended');
+      // Only restart if we haven't already stopped intentionally
       if (recognitionRef.current === recognition) {
-        try {
-          recognition.start();
-        } catch (error) {
-          console.error('Error restarting speech recognition:', error);
-          setIsListening(false);
-        }
+        startListening();
       }
     };
 
     try {
       recognition.start();
-      console.log('Started continuous speech recognition');
+      console.log('Started speech recognition');
     } catch (error) {
       console.error('Speech recognition start error:', error);
       toast.error('Failed to start speech recognition');
       setIsListening(false);
     }
-  }, [hasPermission, stopListening, clearTranscript]);
+  }, [hasPermission, stopListening]);
 
   // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (timeoutRef.current) {
-        window.clearTimeout(timeoutRef.current);
-      }
       stopListening();
     };
   }, [stopListening]);
